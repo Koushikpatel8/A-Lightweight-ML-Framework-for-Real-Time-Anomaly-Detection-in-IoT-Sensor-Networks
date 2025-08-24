@@ -1,4 +1,9 @@
 # scripts/stream_simulator.py
+# This script simulates a live IoT anomaly detection stream.
+# It loads a pre-trained model and encoders, processes a balanced dataset,
+# and prints predictions record by record while saving them to a log file.
+# The simulation helps demonstrate how the system would behave in real-time.
+
 from pathlib import Path
 import time
 import pandas as pd
@@ -7,25 +12,24 @@ from datetime import datetime
 from termcolor import colored
 import os
 
-# ---------------- Path resolution ----------------
+# Path handling:
+# The script checks for environment overrides, Windows absolute paths (laptop),
+# or falls back to repo-relative paths (Raspberry Pi / Linux).
 HERE = Path(__file__).resolve().parent           # .../scripts
 PROJECT = HERE.parent                            # project root
 
-# Repo-relative defaults (Pi / non-Windows)
 REL_MODEL_PATH = HERE / "models" / "kan_model.joblib"
 REL_ENC_PATH   = HERE / "models" / "kan_encoders.joblib"
 REL_DATA_PATH  = PROJECT / "data" / "Train_Test_Network_dataset" / "balanced_stream.csv"
 REL_LOGS_DIR   = PROJECT / "logs"
 REL_LOG_PATH   = REL_LOGS_DIR / "anomaly_predictions.csv"
 
-# Preferred Windows absolute paths (your laptop)
 WIN_MODEL_PATH = Path(r"C:\Users\saite\Desktop\IoT_Anomaly_Detection_Project\scripts\models\kan_model.joblib")
 WIN_ENC_PATH   = Path(r"C:\Users\saite\Desktop\IoT_Anomaly_Detection_Project\scripts\models\kan_encoders.joblib")
 WIN_DATA_PATH  = Path(r"C:\Users\saite\Desktop\IoT_Anomaly_Detection_Project\data\Train_Test_Network_dataset\balanced_stream.csv")
 WIN_LOGS_DIR   = Path(r"C:\Users\saite\Desktop\IoT_Anomaly_Detection_Project\logs")
 WIN_LOG_PATH   = Path(r"C:\Users\saite\Desktop\IoT_Anomaly_Detection_Project\logs\anomaly_predictions.csv")
 
-# Optional env overrides (handy for ad-hoc testing)
 ENV_MODEL_PATH = os.environ.get("KAN_MODEL_PATH")
 ENV_ENC_PATH   = os.environ.get("KAN_ENCODERS_PATH")
 ENV_DATA_PATH  = os.environ.get("KAN_DATA_PATH")
@@ -33,7 +37,7 @@ ENV_LOG_DIR    = os.environ.get("KAN_LOG_DIR")
 ENV_LOG_PATH   = os.environ.get("KAN_LOG_PATH")
 
 def choose_path(win_path: Path, rel_path: Path, env_override: str | None) -> Path:
-    """Pick env override if valid, else Windows absolute if exists, else repo-relative."""
+    """Decides which path to use: environment override, Windows absolute, or repo-relative."""
     if env_override:
         p = Path(env_override)
         if p.exists() or p.parent.exists():
@@ -49,7 +53,7 @@ LOGS_DIR   = choose_path(WIN_LOGS_DIR,   REL_LOGS_DIR,   ENV_LOG_DIR)
 LOG_PATH   = choose_path(WIN_LOG_PATH,   REL_LOG_PATH,   ENV_LOG_PATH)
 
 def main():
-    # Safety checks with helpful messages
+    # Check if the model, encoders, and dataset exist
     if not MODEL_PATH.exists() or not ENC_PATH.exists():
         raise FileNotFoundError(
             f"❌ Model/encoders missing.\n"
@@ -63,14 +67,14 @@ def main():
             f"Tip: create it with your balancing script or point DATA_PATH to an existing CSV."
         )
 
-    # Load artifacts
+    # Load model and encoders
     model = joblib.load(MODEL_PATH)
     encoders = joblib.load(ENC_PATH)
 
-    # Load stream data
+    # Load stream dataset
     df = pd.read_csv(DATA_PATH)
 
-    # Encode categorical columns using the pre-fitted encoders (drop unseen cat cols)
+    # Encode categorical columns (drop unseen columns if necessary)
     cat_cols = df.select_dtypes(include="object").columns.tolist()
     for col in cat_cols:
         if col in encoders:
@@ -79,40 +83,41 @@ def main():
             df.drop(columns=[col], inplace=True)
             print(f"⚠️ Dropped unseen categorical column: {col}")
 
-    # Drop label column if present (we're simulating predictions)
+    # Drop label column, since we are simulating predictions
     if "label" in df.columns:
         df = df.drop(columns=["label"])
 
-    # Ensure logs dir exists
+    # Ensure logs directory exists
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Prepare log file (overwrite each run)
+    # Start a new log file for this simulation
     with LOG_PATH.open("w", encoding="utf-8") as f:
         f.write("timestamp,record_number,prediction\n")
 
-    print("🚀 Starting simulated stream...\n")
+    print(" Starting simulated stream...\n")
     print(f"Model: {MODEL_PATH}")
     print(f"Encoders: {ENC_PATH}")
     print(f"Data: {DATA_PATH}")
     print(f"Log: {LOG_PATH}\n")
 
-    # Stream records one by one
+    # Process data one record at a time to simulate streaming
     for idx, row in df.iterrows():
-        sample_df = pd.DataFrame([row], columns=df.columns)  # keep feature names
+        sample_df = pd.DataFrame([row], columns=df.columns)
         pred = model.predict(sample_df)[0]
 
+        # Display result in console
         label_text = "🟢 Normal" if pred == 0 else "🔴 Anomaly"
         color = "green" if pred == 0 else "red"
         print(f"Record #{idx + 1}: Prediction → {colored(label_text, color)}")
 
-        # Append to log
+        # Log result with timestamp
         with LOG_PATH.open("a", encoding="utf-8") as f:
             ts = datetime.now().isoformat()
             f.write(f"{ts},{idx+1},{'Normal' if pred == 0 else 'Anomaly'}\n")
 
-        time.sleep(0.3)  # simulate delay
+        time.sleep(0.3)  # small delay to mimic real-time streaming
 
-    print(f"\n✅ Stream simulation complete.\n📝 Logs saved at: {LOG_PATH}")
+    print(f"\n✅ Stream simulation complete.\n Logs saved at: {LOG_PATH}")
 
 if __name__ == "__main__":
     main()

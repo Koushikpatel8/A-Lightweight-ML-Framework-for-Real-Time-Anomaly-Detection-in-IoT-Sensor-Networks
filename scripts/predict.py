@@ -1,13 +1,18 @@
+# scripts/predict.py
+# Loads the trained model and encoders, processes a sample input CSV, 
+# applies encoding to categorical features, and prints anomaly predictions.
+
+import os
+import joblib
 import pandas as pd
 import numpy as np
-import joblib
-import os
 
-# === Load trained model and encoders ===
+# === Paths ===
 model_path = "../models/model.pkl"
 encoder_path = "../models/label_encoders.pkl"
 sample_path = "../data/sample.csv"
 
+# === Load trained model and encoders ===
 if not os.path.exists(model_path) or not os.path.exists(encoder_path):
     raise FileNotFoundError("❌ Trained model or encoders not found in 'models' folder.")
 
@@ -19,7 +24,7 @@ df = pd.read_csv(sample_path)
 print(f"✅ Sample loaded: {df.shape[0]} rows, {df.shape[1]} columns")
 
 # === Encode categorical columns ===
-for col in df.select_dtypes(include='object').columns:
+for col in df.select_dtypes(include="object").columns:
     if col in encoders:
         le = encoders[col]
         # Add 'UNKNOWN' class if missing
@@ -34,7 +39,7 @@ for col in df.select_dtypes(include='object').columns:
 predictions = model.predict(df)
 
 # === Print results ===
-print("\n📊 Prediction Results:")
+print("\n Prediction Results:")
 for i, pred in enumerate(predictions):
     label = "🟢 Normal" if pred == 0 else "🔴 Anomaly"
-    print(f"📶 Record #{i+1} → Prediction: {label}")
+    print(f" Record #{i+1} → Prediction: {label}")

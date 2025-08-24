@@ -1,4 +1,8 @@
 # scripts/dht_stream_anomaly.py
+# Reads data from a DHT11 sensor on Raspberry Pi, detects anomalies
+# using a rolling z-score method, logs readings to CSV, and controls
+# optional LEDs (red = anomaly, green = normal).
+
 import os
 import time
 import csv
@@ -7,7 +11,7 @@ from datetime import datetime
 import adafruit_dht
 import board
 
-# ---------------- Optional LEDs ----------------
+# Optional LEDs
 USE_LEDS = True
 try:
     import RPi.GPIO as GPIO
@@ -19,15 +23,15 @@ LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_PATH = os.path.join(LOG_DIR, "sensor_anomalies.csv")
 
-# --- Sensor pin (BCM) ---
+# Sensor pin (BCM)
 # Change to DHT22 if your sensor is DHT22: adafruit_dht.DHT22(board.D4)
 DHT = adafruit_dht.DHT11(board.D4)
 
-# --- LED pins (BCM) ---
+# LED pins (BCM)
 RED_PIN = 17
 GREEN_PIN = 27
 
-# Try to initialize LEDs; if it fails, continue without LEDs
+# Initialize LEDs if available
 if USE_LEDS:
     try:
         GPIO.setwarnings(False)
@@ -37,6 +41,7 @@ if USE_LEDS:
     except Exception:
         USE_LEDS = False
 
+# LED helper functions
 def set_leds(anomaly: bool):
     if not USE_LEDS:
         return
@@ -55,7 +60,7 @@ def safe_close():
         except Exception:
             pass
 
-# ---------------- Rolling Z-score detector (UPDATED) ----------------
+# Rolling Z-score detector
 class RollingZ:
     def __init__(self, window=90, z_thresh=3.5, min_std_t=0.1, min_std_h=0.2, debounce=2):
         self.window = window
@@ -82,7 +87,7 @@ class RollingZ:
         h_std = max(stats.pstdev(self.h_vals), self.min_std_h)
 
         z_t = abs((temp - t_mean) / t_std)
-        z_h = abs((hum  - h_mean) / h_std)
+        z_h = abs((hum - h_mean) / h_std)
 
         # Slide window
         self.t_vals.pop(0); self.t_vals.append(temp)
@@ -100,7 +105,7 @@ class RollingZ:
 
         return {"status": "ready", "anomaly": anomaly, "z_temp": z_t, "z_hum": z_h}
 
-# ---------------- CSV logging (with header fix) ----------------
+# CSV logging
 def append_log(ts, temp, hum, status, anomaly, zt, zh):
     # Write header if file is missing OR empty
     new_file = (not os.path.exists(LOG_PATH)) or os.path.getsize(LOG_PATH) == 0
@@ -110,7 +115,7 @@ def append_log(ts, temp, hum, status, anomaly, zt, zh):
             w.writerow(["timestamp", "temp_c", "humidity", "status", "anomaly", "z_temp", "z_hum"])
         w.writerow([ts, temp, hum, status, int(anomaly), zt, zh])
 
-# ---------------- Main loop ----------------
+# Main loop
 def main():
     print("🟢 Starting DHT stream with rolling anomaly detection...")
     if not USE_LEDS:
@@ -150,7 +155,7 @@ def main():
                 time.sleep(2)
 
     except KeyboardInterrupt:
-        print("\n Stopping...")
+        print("\nStopping...")
     finally:
         safe_close()
 

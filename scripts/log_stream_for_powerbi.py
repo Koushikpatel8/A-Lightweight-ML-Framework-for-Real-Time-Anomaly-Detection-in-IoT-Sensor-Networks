@@ -1,18 +1,22 @@
 # scripts/log_stream_for_powerbi.py
-import pandas as pd
-import joblib
+# Simulates a streaming pipeline: loads trained model & encoders, 
+# applies them to dataset rows one by one, and logs predictions 
+# with timestamps to a CSV for Power BI dashboards.
+
 import os
 import time
+import joblib
+import pandas as pd
 from datetime import datetime
 from sklearn.exceptions import NotFittedError
 
-# Load model and encoders
+# Paths
 MODEL_PATH = "../scripts/models/kan_model.joblib"
 ENCODER_PATH = "../scripts/models/kan_encoders.joblib"
 DATA_PATH = "../data/Train_Test_Network_dataset/train_test_network.csv"
 LOG_PATH = "../logs/powerbi_logs.csv"
 
-print("🔁 Loading model and encoders...")
+print("Loading model and encoders...")
 try:
     model = joblib.load(MODEL_PATH)
     encoders = joblib.load(ENCODER_PATH)
@@ -23,23 +27,23 @@ except FileNotFoundError:
 # Load dataset
 df = pd.read_csv(DATA_PATH)
 
-# Apply label encoding
-for col in df.select_dtypes(include='object').columns:
+# Apply label encoders
+for col in df.select_dtypes(include="object").columns:
     if col in encoders:
         df[col] = encoders[col].transform(df[col].astype(str))
 
-# Remove label column (simulate real-time input)
-if 'label' in df.columns:
-    df.drop(columns=['label'], inplace=True)
+# Drop target (simulate live stream input only)
+if "label" in df.columns:
+    df.drop(columns=["label"], inplace=True)
 
-# Ensure output folder exists
-os.makedirs("../data", exist_ok=True)
+# Ensure logs directory exists
+os.makedirs("../logs", exist_ok=True)
 
-# Initialize or clear CSV log
-with open(LOG_PATH, 'w') as f:
+# Initialize CSV log
+with open(LOG_PATH, "w") as f:
     f.write("timestamp,prediction\n")
 
-print("🚀 Logging stream started... Press CTRL+C to stop.\n")
+print("Logging stream started... Press CTRL+C to stop.\n")
 
 try:
     for i, row in df.iterrows():
@@ -53,11 +57,11 @@ try:
         label = "Normal" if pred == 0 else "Anomaly"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        with open(LOG_PATH, 'a') as f:
+        with open(LOG_PATH, "a") as f:
             f.write(f"{timestamp},{label}\n")
 
         print(f"[{timestamp}] → Prediction: {label}")
-        time.sleep(0.5)  # Simulate delay
+        time.sleep(0.5)  # simulate streaming delay
 
 except KeyboardInterrupt:
     print("\n✅ Stream logging ended by user.")
