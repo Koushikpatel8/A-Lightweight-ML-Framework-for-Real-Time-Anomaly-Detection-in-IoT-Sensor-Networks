@@ -2,11 +2,13 @@
 # Reads data from a DHT11 sensor on Raspberry Pi, detects anomalies
 # using a rolling z-score method, logs readings to CSV, and controls
 # optional LEDs (red = anomaly, green = normal).
-
+#pushes readings to a Power BI Streaming Dataset (set POWER_BI_URL below)
 import os
 import time
 import csv
 from datetime import datetime
+import requests
+import json
 
 import adafruit_dht
 import board
@@ -115,6 +117,29 @@ def append_log(ts, temp, hum, status, anomaly, zt, zh):
             w.writerow(["timestamp", "temp_c", "humidity", "status", "anomaly", "z_temp", "z_hum"])
         w.writerow([ts, temp, hum, status, int(anomaly), zt, zh])
 
+# Power BI push function
+POWER_BI_URL = "https://api.powerbi.com/beta/63ff6df4-9ea2-4e23-b6a9-b4c24dce2bbc/datasets/93d7e14f-0cca-42b0-8b14-e34cfa52659e/rows?experience=power-bi&key=Wsb5%2BdN4GibxZ1EIrbuRoX2Tj7EDXDb5M6RmeexxELOLf%2BNCnrw5FdfVBv2OwvL3CYxV7XRFPdrX3uU8eqRs1w%3D%3D"
+
+def push_to_powerbi(temp, hum, status_text):
+    """Send one row to Power BI and print HTTP result for debugging."""
+    payload = [{
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "temperature": float(temp),
+        "humidity": float(hum),
+        "status": status_text  # must be "Normal" or "Anomaly"
+    }]
+    try:
+        r = requests.post(
+            POWER_BI_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=8
+        )
+        # 200 or 202 are OK. Print first 120 chars of body for clues if not.
+        print(f"Power BI POST {r.status_code}: {r.text[:120]}")
+    except Exception as e:
+        print("❌ Power BI POST failed:", e)
+
 # Main loop
 def main():
     print("🟢 Starting DHT stream with rolling anomaly detection...")
@@ -147,6 +172,11 @@ def main():
                     set_leds(score["anomaly"])
 
                 append_log(ts, temp, hum, score["status"], score["anomaly"], score["z_temp"], score["z_hum"])
+
+                # Push to Power BI  -> send "Normal"/"Anomaly" 
+                status_text = "Anomaly" if score["anomaly"] else "Normal"
+                push_to_powerbi(temp, hum, status_text)
+
                 time.sleep(2)
 
             except RuntimeError as e:
