@@ -1,46 +1,63 @@
 # scripts/train_model.py
-# This script trains a Random Forest model for IoT anomaly detection.
-# It loads the dataset, encodes categorical features, splits data into train/test,
-# trains the model, and finally saves the trained model and encoders for later use.
+# Trains a Random Forest for IoT anomaly detection with class imbalance handling,
+# saves the model + encoders to scripts/models, and prints a quick evaluation.
 
-import pandas as pd
 import os
 import joblib
+import pandas as pd
+from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 
-# Step 1: Load dataset
-# The dataset is stored in the project data folder
-data_path = "../data/Train_Test_Network_dataset/train_test_network.csv"
-df = pd.read_csv(data_path)
+# Paths
+HERE = Path(__file__).resolve().parent
+PROJECT = HERE.parent
+DATA_PATH = PROJECT / "data" / "Train_Test_Network_dataset" / "train_test_network.csv"
+MODELS_DIR = HERE / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Step 2: Encode categorical features
-# Categorical columns are transformed into numeric codes
-label_encoders = {}
-for col in df.select_dtypes(include='object').columns:
+MODEL_OUT = MODELS_DIR / "kan_model.joblib"        # keep names your other scripts expect
+ENC_OUT   = MODELS_DIR / "kan_encoders.joblib"
+
+# 1) Load data
+df = pd.read_csv(DATA_PATH)
+
+# 2) Encode categoricals
+encoders = {}
+for col in df.select_dtypes(include="object").columns:
     le = LabelEncoder()
-    df[col] = le.fit_transform(df[col])
-    label_encoders[col] = le
+    df[col] = le.fit_transform(df[col].astype(str))
+    encoders[col] = le
 
-# Step 3: Split into features and labels
-# Features (X) exclude the label column, target (y) is the label
-X = df.drop('label', axis=1)
-y = df['label']
+# 3) Split
+X = df.drop(columns=["label"])
+y = df["label"]
 
-# Step 4: Train/test split
-# The dataset is split 80/20 for training and testing
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Show class balance
+print("Class counts:", y.value_counts().to_dict())
 
-# Step 5: Train the model
-# Random Forest is chosen for its robustness and ensemble learning approach
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.20, random_state=42, stratify=y  # stratify helps class balance
+)
 
-# Step 6: Save model and encoders
-# The trained model and encoders are saved to the models directory
-os.makedirs("../models", exist_ok=True)
-joblib.dump(model, "../models/model.pkl")
-joblib.dump(label_encoders, "../models/label_encoders.pkl")
+# 4) Train RandomForest with imbalance awareness
+rf = RandomForestClassifier(
+    n_estimators=300,
+    random_state=42,
+    n_jobs=-1,
+    class_weight="balanced_subsample"  # combats imbalance
+)
+rf.fit(X_train, y_train)
 
-print("✅ Model and encoders saved successfully!")
+# 5) Quick evaluation
+y_pred = rf.predict(X_test)
+print("\nEvaluation (RandomForest):")
+print(classification_report(y_test, y_pred, target_names=["Normal", "Anomaly"]))
+
+# 6) Save
+joblib.dump(rf, MODEL_OUT)
+joblib.dump(encoders, ENC_OUT)
+print(f"\n✅ Saved model → {MODEL_OUT}")
+print(f"✅ Saved encoders → {ENC_OUT}")
